@@ -1,0 +1,114 @@
+name: PostgreSQL 15-18
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: pgsql-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      bootstrap: ${{ steps.source.outputs.bootstrap }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: source
+        env:
+          PROJECT: ${{ runner.temp }}/pgsql-project
+        run: |
+          set -euo pipefail
+          mkdir -p "$PROJECT"
+          if test -f app/db.php; then
+            echo 'bootstrap=false' >> "$GITHUB_OUTPUT"
+            git archive HEAD | tar -x -C "$PROJECT"
+          else
+            echo 'bootstrap=true' >> "$GITHUB_OUTPUT"
+            git init "$RUNNER_TEMP/upstream"
+            git -C "$RUNNER_TEMP/upstream" fetch --depth=1 https://github.com/mdatto-cell/vinyl-catalog.git fea3d04de41587e0b646752ea4b5299dae6070f5
+            git -C "$RUNNER_TEMP/upstream" archive fea3d04de41587e0b646752ea4b5299dae6070f5 | tar -x -C "$PROJECT"
+          fi
+      - if: steps.source.outputs.bootstrap == 'true'
+        env:
+          PROJECT: ${{ runner.temp }}/pgsql-project
+        run: python3 .github/port_pgsql.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pgsql-project
+          path: ${{ runner.temp }}/pgsql-project/
+          include-hidden-files: true
+          retention-days: 7
+  test:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        postgres: ['15', '16', '17', '18']
+    services:
+      postgres:
+        image: postgres:${{ matrix.postgres }}
+        env:
+          POSTGRES_DB: vinyl_catalog
+          POSTGRES_USER: vinyl_user
+          POSTGRES_PASSWORD: test_only
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U vinyl_user -d vinyl_catalog"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: pgsql-project
+      - run: sudo apt-get update && sudo apt-get install -y php-cli php-pgsql php-mbstring php-curl postgresql-client
+      - env:
+          PGPASSWORD: test_only
+        run: |
+          set -euo pipefail
+          cp app/config.example.php app/config.php
+          sed -i "s/'CHANGE_ME'/'test_only'/" app/config.php
+          psql -h 127.0.0.1 -U vinyl_user -d vinyl_catalog -v ON_ERROR_STOP=1 -f sql/02_schema.sql
+          psql -h 127.0.0.1 -U vinyl_user -d vinyl_catalog -v ON_ERROR_STOP=1 -f sql/02_schema.sql
+          find app public tests tools -name '*.php' -print0 | xargs -0 -n1 php -l
+          php tests/tracks_test.php
+          php tests/tracks_test.php --db
+          php tests/audio_test.php
+          php tests/pgsql_test.php --test-db
+          HASH=$(php -r 'echo password_hash("test-only-password",PASSWORD_DEFAULT);')
+          printf '%s\n' "$HASH" | php tools/create_admin.php admin
+          php -r 'require "app/db.php"; $s=db()->prepare("SELECT password_hash FROM users WHERE lower(username)=lower(?)"); $s->execute(["ADMIN"]); if(!password_verify("test-only-password",$s->fetchColumn()))exit(1);'
+  publish:
+    needs: [prepare, test]
+    if: needs.prepare.outputs.bootstrap == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/download-artifact@v4
+        with:
+          name: pgsql-project
+          path: ${{ runner.temp }}/pgsql-project
+      - env:
+          EXPECTED_COMMIT: ${{ github.sha }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_COMMIT"
+          test ! -f app/db.php
+          test ! -f "$RUNNER_TEMP/pgsql-project/app/config.php"
+          test ! -d "$RUNNER_TEMP/pgsql-project/.github"
+          cp -a "$RUNNER_TEMP/pgsql-project/." .
+          python3 -c 'import json,os; open("PGSQL-TEST-RESULTS.json","w").write(json.dumps({"postgresql":[15,16,17,18],"result":"passed","run_url":os.environ["RUN_URL"]},indent=2)+"\n")'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .
+          git commit -m 'Add standalone PostgreSQL project verified on 15-18'
+          git push origin HEAD:main
