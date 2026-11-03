@@ -1,0 +1,5 @@
+# Типы для оцифровок (Apache). Запрет PHP наследуется из uploads/.htaccess.
+AddType audio/flac .flac
+AddType audio/wav .wav
+AddType audio/mpeg .mp3
+Options -Indexes

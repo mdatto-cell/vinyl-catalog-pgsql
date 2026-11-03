@@ -1,0 +1,10 @@
+{
+  "postgresql": [
+    15,
+    16,
+    17,
+    18
+  ],
+  "result": "passed",
+  "run_url": "https://github.com/mdatto-cell/vinyl-catalog-pgsql/actions/runs/41641134166"
+}

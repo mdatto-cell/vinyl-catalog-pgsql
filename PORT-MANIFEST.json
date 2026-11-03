@@ -1,0 +1,23 @@
+{
+  "source": "mdatto-cell/vinyl-catalog",
+  "commit": "fea3d04de41587e0b646752ea4b5299dae6070f5",
+  "changed": [
+    "README.md",
+    "app/auth.php",
+    "app/config.example.php",
+    "app/db.php",
+    "app/tracks.php",
+    "public/admin/add.php",
+    "public/index.php",
+    "sql/01_create_database.sql",
+    "sql/02_schema.sql",
+    "sql/03_create_admin.sql",
+    "sql/04_track_audio.sql",
+    "tests/pgsql_test.php",
+    "tests/tracks_test.php",
+    "tools/create_admin.php"
+  ],
+  "unchanged_original_files": 26,
+  "templates": "HTML suffixes verified identical",
+  "install": "fresh PostgreSQL only"
+}

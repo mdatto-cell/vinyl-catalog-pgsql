@@ -1,0 +1,16 @@
+# Секреты и локальные данные
+/app/config.php
+*.sql.gz
+/dump*.sql
+*.bak
+*.swp
+.DS_Store
+.idea/
+.vscode/
+
+# Загруженные пользователями файлы
+/public/uploads/records/*
+!/public/uploads/records/.gitkeep
+/public/uploads/music/*
+!/public/uploads/music/.gitkeep
+!/public/uploads/music/.htaccess
